@@ -25,8 +25,8 @@ $ protoc \
 
 ## Build
 
-go build reader.go
+`go build reader.go`
 
 ## Run
 
-./reader <path to hdfs fsimage>
+`./reader <path to hdfs fsimage>`
