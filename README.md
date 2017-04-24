@@ -2,8 +2,9 @@
 A Golang port of https://github.com/sebinjohn/hdfs-fsimage-parse
 
 ## First Steps
-````
-$ cd hadoop_protocols`
+
+```
+$ cd hadoop_protocols
 
 $ mkdir ${GOPATH}/{hadoop_common,hadoop_hdfs,hadoop_hdfs_fsimage}
 
@@ -20,7 +21,7 @@ $ protoc \
 	--go_out=Mhdfs.proto=hadoop_hdfs,Macl.proto=hadoop_hdfs,Mxattr.proto=hadoop_hdfs:${GOPATH}/src/hadoop_hdfs_fsimage \
 	-I${GOPATH}/hadoop_common \
 	-I$(pwd) hadoop/hdfs/fsimage/fsimage.proto
-  ```
+```
 
 ## Build
 
