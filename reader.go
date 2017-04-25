@@ -63,15 +63,24 @@ func main() {
 	}
 
 	var sectionMap = make(map[string]*pb.FileSummary_Section)
-	sections := fileSummary.GetSections()
 
-	for _, value := range sections {
+	for _, value := range fileSummary.GetSections() {
 		sectionMap[value.GetName()] = value
 	}
 
 	inodeSectionInfo := sectionMap["INODE"]
-	var inodeSectionBytes = make([]byte, inodeSectionInfo.GetLength())
-	_, err = f.ReadAt(inodeSectionBytes, int64(inodeSectionInfo.GetOffset()))
+	parseInodeSection(inodeSectionInfo, f)
+
+	inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
+	parseInodeDirectorySection(inodeDirectorySectionInfo, f)
+
+	fmt.Println("Parse further")
+	fmt.Println(sectionMap)
+}
+
+func parseInodeSection(info *pb.FileSummary_Section, imageFile *os.File) {
+	var inodeSectionBytes = make([]byte, info.GetLength())
+	_, err := imageFile.ReadAt(inodeSectionBytes, int64(info.GetOffset()))
 	logErr(err)
 
 	i, c := binary.Uvarint(inodeSectionBytes)
@@ -110,12 +119,6 @@ func main() {
 	}
 	fmt.Println("count of part-m-00000: ", count)
 	fmt.Println("Last 10 names", names[totalInodes-10:])
-
-	for name, section := range sectionMap {
-		fmt.Println(name, section.GetLength())
-	}
-	inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
-	parseInodeDirectorySection(inodeDirectorySectionInfo, f)
 }
 
 func parseInodeDirectorySection(info *pb.FileSummary_Section, imageFile *os.File) {
