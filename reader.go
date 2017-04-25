@@ -11,7 +11,7 @@ import (
 	"os"
 )
 
-func logErr(err error) {
+func logIfErr(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -20,10 +20,10 @@ func logErr(err error) {
 func main() {
 	fileName := os.Args[1]
 	fInfo, err := os.Stat(fileName)
-	logErr(err)
+	logIfErr(err)
 
 	f, err := os.Open(fileName)
-	logErr(err)
+	logIfErr(err)
 
 	// create a slice of 4 bytes long from the end
 
@@ -40,7 +40,7 @@ func main() {
 	var fSummaryLength int32
 	bReader := bytes.NewReader(x)
 	err = binary.Read(bReader, binary.BigEndian, &fSummaryLength)
-	logErr(err)
+	logIfErr(err)
 
 	fSummaryLength64 := int64(fSummaryLength)
 	readAt := fileLength - fSummaryLength64 - 4
@@ -81,7 +81,7 @@ func main() {
 func parseInodeSection(info *pb.FileSummary_Section, imageFile *os.File) {
 	var inodeSectionBytes = make([]byte, info.GetLength())
 	_, err := imageFile.ReadAt(inodeSectionBytes, int64(info.GetOffset()))
-	logErr(err)
+	logIfErr(err)
 
 	i, c := binary.Uvarint(inodeSectionBytes)
 	if c <= 0 {
@@ -127,7 +127,7 @@ func parseInodeDirectorySection(info *pb.FileSummary_Section, imageFile *os.File
 	dirSectionBytes := make([]byte, length)
 	// inode directory section has repeated directory entry messages
 	_, err := imageFile.ReadAt(dirSectionBytes, startPos)
-	logErr(err)
+	logIfErr(err)
 	childParent := make(map[uint64]uint64)
 	dirEntry := &pb.INodeDirectorySection_DirEntry{}
 	for a := uint64(length); a > 0; {
