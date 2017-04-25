@@ -114,4 +114,37 @@ func main() {
 	for name, section := range sectionMap {
 		fmt.Println(name, section.GetLength())
 	}
+	inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
+	parseInodeDirectorySection(inodeDirectorySectionInfo, f)
+}
+
+func parseInodeDirectorySection(info *pb.FileSummary_Section, imageFile *os.File) {
+	startPos := int64(info.GetOffset())
+	length := info.GetLength()
+	dirSectionBytes := make([]byte, length)
+	// inode directory section has repeated directory entry messages
+	_, err := imageFile.ReadAt(dirSectionBytes, startPos)
+	logErr(err)
+	childParent := make(map[uint64]uint64)
+	dirEntry := &pb.INodeDirectorySection_DirEntry{}
+	for a := uint64(length); a > 0; {
+		i, c := binary.Uvarint(dirSectionBytes)
+		if c <= 0 {
+			log.Fatal("buf too small(0) or overflows(-1)")
+		}
+		newPos := uint64(c) + i
+		tmpBuf := dirSectionBytes[c:newPos]
+		if err = proto.Unmarshal(tmpBuf, dirEntry); err != nil {
+			log.Fatal(err)
+		}
+		parent := dirEntry.GetParent()
+		children := dirEntry.GetChildren()
+		lengthChildren := len(children)
+		for j := 0; j < lengthChildren; j++ {
+			childParent[children[j]] = parent
+		}
+		a -= newPos
+		dirSectionBytes = dirSectionBytes[newPos:]
+	}
+	fmt.Println("Number of nodes:", len(childParent))
 }
