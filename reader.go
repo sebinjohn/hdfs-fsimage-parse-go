@@ -25,12 +25,23 @@ func main() {
 	f, err := os.Open(fileName)
 	logIfErr(err)
 
-	// create a slice of 4 bytes long from the end
-
 	fileLength := fInfo.Size()
+	sectionMap := parseFileSummary(f, fileLength)
+
+	inodeSectionInfo := sectionMap["INODE"]
+	parseInodeSection(inodeSectionInfo, f)
+
+	inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
+	parseInodeDirectorySection(inodeDirectorySectionInfo, f)
+
+	fmt.Println("Parse further")
+	fmt.Println(sectionMap)
+}
+
+func parseFileSummary(imageFile *os.File, fileLength int64) map[string]*pb.FileSummary_Section {
 	fileSummaryLengthStart := fileLength - 4
 	var x = make([]byte, 4)
-	_, err = f.ReadAt(x, fileSummaryLengthStart)
+	_, err := imageFile.ReadAt(x, fileSummaryLengthStart)
 	if err != nil {
 		if err != io.EOF {
 			log.Fatal(err)
@@ -45,7 +56,7 @@ func main() {
 	fSummaryLength64 := int64(fSummaryLength)
 	readAt := fileLength - fSummaryLength64 - 4
 	var fSummaryBytes = make([]byte, fSummaryLength)
-	_, err = f.ReadAt(fSummaryBytes, readAt)
+	_, err = imageFile.ReadAt(fSummaryBytes, readAt)
 	if err != nil {
 		if err != io.EOF {
 			log.Fatal(err)
@@ -67,15 +78,7 @@ func main() {
 	for _, value := range fileSummary.GetSections() {
 		sectionMap[value.GetName()] = value
 	}
-
-	inodeSectionInfo := sectionMap["INODE"]
-	parseInodeSection(inodeSectionInfo, f)
-
-	inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
-	parseInodeDirectorySection(inodeDirectorySectionInfo, f)
-
-	fmt.Println("Parse further")
-	fmt.Println(sectionMap)
+	return sectionMap
 }
 
 func parseInodeSection(info *pb.FileSummary_Section, imageFile *os.File) {
