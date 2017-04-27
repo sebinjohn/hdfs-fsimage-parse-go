@@ -31,16 +31,21 @@ func main() {
 	inodeSectionInfo := sectionMap["INODE"]
 	parseInodeSection(inodeSectionInfo, f)
 
-	inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
-	parseInodeDirectorySection(inodeDirectorySectionInfo, f)
+	// inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
+	// parseInodeDirectorySection(inodeDirectorySectionInfo, f)
 
 	fmt.Println("Parse further")
 	fmt.Println(sectionMap)
 }
 
 func parseFileSummary(imageFile *os.File, fileLength int64) map[string]*pb.FileSummary_Section {
-	fileSummaryLengthStart := fileLength - 4
+	// last 4 bytes says how many bytes should be read from end to get the FileSummary message
+	const FILE_SUM_BYTES = 4
+	fileSummaryLengthStart := fileLength - FILE_SUM_BYTES
 	var x = make([]byte, 4)
+	var fSummaryLength int32
+	bReader := bytes.NewReader(x)
+
 	_, err := imageFile.ReadAt(x, fileSummaryLengthStart)
 	if err != nil {
 		if err != io.EOF {
@@ -48,13 +53,13 @@ func parseFileSummary(imageFile *os.File, fileLength int64) map[string]*pb.FileS
 		}
 	}
 
-	var fSummaryLength int32
-	bReader := bytes.NewReader(x)
-	err = binary.Read(bReader, binary.BigEndian, &fSummaryLength)
-	logIfErr(err)
+	if err = binary.Read(bReader, binary.BigEndian, &fSummaryLength); err != nil {
+		log.Fatal(err)
+	}
 
 	fSummaryLength64 := int64(fSummaryLength)
-	readAt := fileLength - fSummaryLength64 - 4
+	readAt := fileLength - fSummaryLength64 - FILE_SUM_BYTES
+
 	var fSummaryBytes = make([]byte, fSummaryLength)
 	_, err = imageFile.ReadAt(fSummaryBytes, readAt)
 	if err != nil {
@@ -68,6 +73,7 @@ func parseFileSummary(imageFile *os.File, fileLength int64) map[string]*pb.FileS
 	if c <= 0 {
 		log.Fatal("buf too small(0) or overflows(-1): ", c)
 	}
+
 	fSummaryBytes = fSummaryBytes[c:]
 	if err = proto.Unmarshal(fSummaryBytes, fileSummary); err != nil {
 		log.Fatal(err)
@@ -99,7 +105,8 @@ func parseInodeSection(info *pb.FileSummary_Section, imageFile *os.File) {
 	}
 	totalInodes := inodeSection.GetNumInodes()
 
-	var names = make([]string, totalInodes)
+	// var names = make([]string, totalInodes)
+	var names = make(map[string]uint32)
 	for a := uint64(0); a < totalInodes; a++ {
 		inodeSectionBytes = inodeSectionBytes[newPos:]
 		i, c = binary.Uvarint(inodeSectionBytes)
@@ -112,16 +119,12 @@ func parseInodeSection(info *pb.FileSummary_Section, imageFile *os.File) {
 		if err = proto.Unmarshal(tmpBuf, inode); err != nil {
 			log.Fatal(err)
 		}
-		names[a] = string(inode.GetName())
+		names[string(inode.GetName())]++
 	}
-	count := 0
-	for _, v := range names {
-		if v == "part-m-00000" {
-			count++
-		}
+	namesPairList := SortByValue(names)
+	for i := 0; i < 10; i++ {
+		fmt.Println(namesPairList[i])
 	}
-	fmt.Println("count of part-m-00000: ", count)
-	fmt.Println("Last 10 names", names[totalInodes-10:])
 }
 
 func parseInodeDirectorySection(info *pb.FileSummary_Section, imageFile *os.File) {
