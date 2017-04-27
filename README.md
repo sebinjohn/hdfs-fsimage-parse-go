@@ -23,10 +23,6 @@ $ protoc \
 	-I$(pwd) hadoop/hdfs/fsimage/fsimage.proto
 ```
 
-## Build
-
-`go build reader.go`
-
 ## Run
 
-`./reader <path to hdfs fsimage>`
+`go run *.go <path to hdfs fsimage>`
