@@ -31,8 +31,8 @@ func main() {
 	inodeSectionInfo := sectionMap["INODE"]
 	parseInodeSection(inodeSectionInfo, f)
 
-	// inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
-	// parseInodeDirectorySection(inodeDirectorySectionInfo, f)
+	inodeDirectorySectionInfo := sectionMap["INODE_DIR"]
+	parseInodeDirectorySection(inodeDirectorySectionInfo, f)
 
 	fmt.Println("Parse further")
 	fmt.Println(sectionMap)
@@ -88,7 +88,14 @@ func parseFileSummary(imageFile *os.File, fileLength int64) map[string]*pb.FileS
 }
 
 func parseInodeSection(info *pb.FileSummary_Section, imageFile *os.File) {
-	var inodeSectionBytes = make([]byte, info.GetLength())
+	var (
+		inodeSectionBytes        = make([]byte, info.GetLength())
+		names                    = make(map[HDFSFileName]NameCount)
+		files             uint32 = 0
+		dirs              uint32 = 0
+		symlinks          uint32 = 0
+		inodeType         pb.INodeSection_INode_Type
+	)
 	_, err := imageFile.ReadAt(inodeSectionBytes, int64(info.GetOffset()))
 	logIfErr(err)
 
@@ -106,7 +113,6 @@ func parseInodeSection(info *pb.FileSummary_Section, imageFile *os.File) {
 	totalInodes := inodeSection.GetNumInodes()
 
 	// var names = make([]string, totalInodes)
-	var names = make(map[string]uint32)
 	for a := uint64(0); a < totalInodes; a++ {
 		inodeSectionBytes = inodeSectionBytes[newPos:]
 		i, c = binary.Uvarint(inodeSectionBytes)
@@ -119,24 +125,38 @@ func parseInodeSection(info *pb.FileSummary_Section, imageFile *os.File) {
 		if err = proto.Unmarshal(tmpBuf, inode); err != nil {
 			log.Fatal(err)
 		}
-		names[string(inode.GetName())]++
+		inodeType = inode.GetType()
+		if inodeType == 1 {
+			files++
+		} else if inodeType == 2 {
+			dirs++
+		} else {
+			symlinks++
+		}
+		names[HDFSFileName(inode.GetName())]++
 	}
-	namesPairList := SortByValue(names)
+	fmt.Println("Top 10 filnames:")
+	namesPairList := SortByNameCount(names)
 	for i := 0; i < 10; i++ {
 		fmt.Println(namesPairList[i])
 	}
+	fmt.Println("Total Number of Files: ", files)
+	fmt.Println("Total Number of Directories: ", dirs)
+	fmt.Println("Total Number of Symlinks: ", symlinks)
 }
 
 func parseInodeDirectorySection(info *pb.FileSummary_Section, imageFile *os.File) {
+	var (
+		childCount = make(map[ParentID]ChildrenCount)
+	)
 	startPos := int64(info.GetOffset())
 	length := info.GetLength()
 	dirSectionBytes := make([]byte, length)
 	// inode directory section has repeated directory entry messages
 	_, err := imageFile.ReadAt(dirSectionBytes, startPos)
 	logIfErr(err)
-	childParent := make(map[uint64]uint64)
 	dirEntry := &pb.INodeDirectorySection_DirEntry{}
-	for a := uint64(length); a > 0; {
+	for a := length; a > 0; {
 		i, c := binary.Uvarint(dirSectionBytes)
 		if c <= 0 {
 			log.Fatal("buf too small(0) or overflows(-1)")
@@ -146,14 +166,14 @@ func parseInodeDirectorySection(info *pb.FileSummary_Section, imageFile *os.File
 		if err = proto.Unmarshal(tmpBuf, dirEntry); err != nil {
 			log.Fatal(err)
 		}
-		parent := dirEntry.GetParent()
-		children := dirEntry.GetChildren()
-		lengthChildren := len(children)
-		for j := 0; j < lengthChildren; j++ {
-			childParent[children[j]] = parent
-		}
+		parent := ParentID(dirEntry.GetParent())
+		childCount[parent] = ChildrenCount(len(dirEntry.GetChildren()))
 		a -= newPos
 		dirSectionBytes = dirSectionBytes[newPos:]
 	}
-	fmt.Println("Number of nodes:", len(childParent))
+	fmt.Println("Top 10 directories <no of children>")
+	parChildCount := SortByChildCount(childCount)
+	for i := 0; i < 10; i++ {
+		fmt.Println(parChildCount[i])
+	}
 }
