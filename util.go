@@ -5,17 +5,42 @@ import (
 	"strconv"
 )
 
+const (
+	FILE      = iota
+	DIRECTORY = iota
+	SYMLINK   = iota
+)
+
+type InodeId uint64
+type ChildId uint64
 type HDFSFileName string
 type NameCount uint32
 
 type ChildrenCount int
-type ParentID uint64
+type ParentId uint64
+
+type INodeTree struct {
+	INode
+	Children []*INodeTree
+}
+
+type EntityCount struct {
+	Files       uint32
+	Directories uint32
+	Symlinks    uint32
+}
+
+type INode struct {
+	Name []byte
+	Id   InodeId
+	Type int
+}
 
 func (i ChildrenCount) String() string {
 	return strconv.Itoa(int(i))
 }
 
-func (i ParentID) String() string {
+func (i ParentId) String() string {
 	return strconv.FormatUint(uint64(i), 10)
 }
 
@@ -48,7 +73,7 @@ func SortByNameCount(m map[HDFSFileName]NameCount) NameCountPairList {
 }
 
 type ChildrenCountPair struct {
-	Parid      ParentID
+	Parid      ParentId
 	ChildCount ChildrenCount
 }
 
@@ -64,7 +89,7 @@ func (p ChildrenCountPairList) Less(i, j int) bool { return p[i].ChildCount < p[
 
 func (p ChildrenCountPairList) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
 
-func SortByChildCount(data map[ParentID]ChildrenCount) ChildrenCountPairList {
+func SortByChildCount(data map[ParentId]ChildrenCount) ChildrenCountPairList {
 	pl := make(ChildrenCountPairList, len(data))
 	i := 0
 	for k, v := range data {
@@ -73,4 +98,34 @@ func SortByChildCount(data map[ParentID]ChildrenCount) ChildrenCountPairList {
 	}
 	sort.Sort(sort.Reverse(pl))
 	return pl
+}
+
+func MinINodeID(inodeIds []InodeId) InodeId {
+	min := inodeIds[0]
+	for _, v := range inodeIds {
+		if v < min {
+			min = v
+		}
+	}
+	return min
+}
+
+func CountTreeNodes(rootNode INodeTree) {
+	var i uint32 = 1
+	for _, child := range rootNode.Children {
+		i++
+		countInSubTree(*child, &i)
+	}
+}
+
+func countInSubTree(node INodeTree, counter *uint32) {
+	children := node.Children
+	if children == nil || len(children) == 0 {
+		(*counter)++
+		return
+	}
+	for _, c := range node.Children {
+		(*counter)++
+		countInSubTree(*c, counter)
+	}
 }
