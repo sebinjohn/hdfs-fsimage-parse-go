@@ -12,7 +12,6 @@ import (
 	"log"
 	"os"
 	"sync"
-	"time"
 )
 
 func logIfErr(err error) {
@@ -24,10 +23,6 @@ func logIfErr(err error) {
 const FILE_SUM_BYTES = 4
 
 func main() {
-	if len(os.Args) < 3 {
-		log.Fatal("Usage: ./main <path to fsimage>")
-	}
-
 	imagePathPtr := flag.String("image", "", "path to the fsimage file")
 	outputPathPtr := flag.String("out", "", "output path")
 	flag.Parse()
@@ -58,7 +53,6 @@ func main() {
 	inodeDirSectionInfo := sectionMap["INODE_DIR"]
 	chDirSec := make(chan ParentChildren, 1000)
 	go ParseInodeDirectorySection(inodeDirSectionInfo, f, chDirSec)
-	time.Sleep(1 * time.Millisecond)
 	parChildMap := make(map[uint64][]uint64)
 	if err != nil {
 		log.Fatal(nil)
