@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/binary"
-	"fmt"
 	"github.com/golang/protobuf/proto"
 	pb "hadoop_hdfs_fsimage"
 	"log"
@@ -10,7 +9,6 @@ import (
 )
 
 func ParseInodeDirectorySection(info *pb.FileSummary_Section, imageFile *os.File, ch chan ParentChildren) {
-	fmt.Println("Hello")
 	var (
 		parent   uint64                             = 0
 		children []uint64                           = []uint64{}

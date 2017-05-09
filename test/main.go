@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	pb "hadoop_hdfs_fsimage"
@@ -23,7 +24,20 @@ func logIfErr(err error) {
 const FILE_SUM_BYTES = 4
 
 func main() {
-	fileName := os.Args[1]
+	if len(os.Args) < 3 {
+		log.Fatal("Usage: ./main <path to fsimage>")
+	}
+
+	imagePathPtr := flag.String("image", "", "path to the fsimage file")
+	outputPathPtr := flag.String("out", "", "output path")
+	flag.Parse()
+	fileName := *imagePathPtr
+	outputPath := *outputPathPtr
+	if fileName == "" || outputPath == "" {
+		fmt.Println("Usage: ./main -image=<path to image> -out=<output path>")
+		log.Fatal("")
+	}
+
 	fInfo, err := os.Stat(fileName)
 	logIfErr(err)
 
@@ -33,35 +47,31 @@ func main() {
 	fSummaryLength := decodeFileSummaryLength(fileLength, f)
 	sectionMap := parseFileSummary(f, fileLength, fSummaryLength)
 	inodeSectionInfo := sectionMap["INODE"]
-	ch := make(chan INode, 100000)
-	go ParseInodeSection(inodeSectionInfo, f, ch)
-	i := 0
+	inodeCh := make(chan INode, 100000)
+	go ParseInodeSection(inodeSectionInfo, f, inodeCh)
 	inodesMap := make(map[uint64]INode)
-	for inode := range ch {
+	for inode := range inodeCh {
 		inodesMap[inode.Id] = inode
 	}
-
 	fmt.Println("Total INodes: ", len(inodesMap))
 
 	inodeDirSectionInfo := sectionMap["INODE_DIR"]
 	chDirSec := make(chan ParentChildren, 1000)
 	go ParseInodeDirectorySection(inodeDirSectionInfo, f, chDirSec)
-	i = 0
 	time.Sleep(1 * time.Millisecond)
 	parChildMap := make(map[uint64][]uint64)
 	if err != nil {
 		log.Fatal(nil)
 	}
-
 	for pc := range chDirSec {
 		parChildMap[pc.Parent] = pc.Children
 	}
-	fmt.Println("Total Directories: ", i)
-	paths := make(chan string, 10000)
-	go findPath(parChildMap, inodesMap, paths)
-	a, err := os.Create("file.txt")
+
+	pathsChan := make(chan string, 10000)
+	go findPath(parChildMap, inodesMap, pathsChan)
+	a, err := os.Create(os.Args[2])
 	w := bufio.NewWriterSize(a, 1000000)
-	for path := range paths {
+	for path := range pathsChan {
 		fmt.Fprintln(w, path)
 	}
 	w.Flush()
@@ -119,43 +129,44 @@ func decodeFileSummaryLength(fileLength int64, imageFile *os.File) int32 {
 	return fSummaryLength
 }
 func findPath(pm map[uint64][]uint64, names map[uint64]INode, ch chan string) {
-	rootId := uint64(16385)
+	var (
+		rootId uint64 = 16385
+		wg     sync.WaitGroup
+	)
 	children, ok := pm[rootId]
 	if !ok {
-		log.Fatal("No children to /")
+		ch <- "/"
+		close(ch)
+		return
+	} else {
+		for _, c := range children {
+			wg.Add(1)
+			go func(child uint64) {
+				defer wg.Done()
+				findSubPath("", pm, names, child, ch)
+			}(c)
+		}
+		wg.Wait()
+		fmt.Println("All go routines are over. closing the channel")
+		close(ch)
 	}
-	var wg sync.WaitGroup
-	for _, c := range children {
-		wg.Add(1)
-		go func(child uint64) {
-			defer wg.Done()
-			findSubPath("", pm, names, child, ch)
-		}(c)
-	}
-	wg.Wait()
-	fmt.Println("All go routines are over. closing the channel")
-	close(ch)
-	fmt.Println("Path Counter: ", pathCounter)
 }
 
-var pathCounter int = 0
+func findSubPath(
+	constructedPath string,
+	parChildrenMap map[uint64][]uint64,
+	inodeNames map[uint64]INode,
+	curInodeId uint64,
+	ch chan string) {
 
-func findSubPath(constructedPath string, parChildrenMap map[uint64][]uint64, inodeNames map[uint64]INode,
-	curInodeId uint64, ch chan string) {
-
-	var children []uint64
 	children, ok1 := parChildrenMap[curInodeId]
 	inode, _ := inodeNames[curInodeId]
-	numberOfChildren := len(children)
-
-	if !ok1 || numberOfChildren == 0 {
-		ch <- constructedPath + "/" + string(inode.Name)
-		pathCounter++
+	p := constructedPath + "/" + string(inode.Name)
+	if !ok1 || len(children) == 0 {
+		ch <- p
 		return
 	}
-
 	for _, child := range children {
-		findSubPath(constructedPath+"/"+string(inode.Name), parChildrenMap, inodeNames, child, ch)
+		findSubPath(p, parChildrenMap, inodeNames, child, ch)
 	}
-	return
 }
