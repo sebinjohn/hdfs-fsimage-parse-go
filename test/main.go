@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -25,9 +26,11 @@ const FILE_SUM_BYTES = 4
 func main() {
 	imagePathPtr := flag.String("image", "", "path to the fsimage file")
 	outputPathPtr := flag.String("out", "", "output path")
+	startAt := flag.String("startat", "", "start search at ")
 	flag.Parse()
 	fileName := *imagePathPtr
 	outputPath := *outputPathPtr
+	parentPath := *startAt
 	if fileName == "" || outputPath == "" {
 		fmt.Println("Usage: ./main -image=<path to image> -out=<output path>")
 		log.Fatal("")
@@ -62,7 +65,8 @@ func main() {
 	}
 
 	pathsChan := make(chan string, 10000)
-	go findPath(parChildMap, inodesMap, pathsChan)
+	pathParts := strings.Split(parentPath, "/")
+	go findPath(parChildMap, inodesMap, pathsChan, pathParts[1:])
 	a, err := os.Create(os.Args[2])
 	w := bufio.NewWriterSize(a, 1000000)
 	for path := range pathsChan {
@@ -122,7 +126,7 @@ func decodeFileSummaryLength(fileLength int64, imageFile *os.File) int32 {
 	}
 	return fSummaryLength
 }
-func findPath(pm map[uint64][]uint64, names map[uint64]INode, ch chan string) {
+func findPath(pm map[uint64][]uint64, names map[uint64]INode, ch chan string, pathParts []string) {
 	var (
 		rootId uint64 = 16385
 		wg     sync.WaitGroup
@@ -134,11 +138,21 @@ func findPath(pm map[uint64][]uint64, names map[uint64]INode, ch chan string) {
 		return
 	} else {
 		for _, c := range children {
-			wg.Add(1)
-			go func(child uint64) {
-				defer wg.Done()
-				findSubPath("", pm, names, child, ch)
-			}(c)
+			if len(pathParts) == 0 {
+				// if there is no filtering applied
+				wg.Add(1)
+				go func(child uint64) {
+					defer wg.Done()
+					findSubPath("", pm, names, child, ch, pathParts[1:])
+				}(c)
+			} else if string(names[c].Name) == pathParts[0] {
+				// when some filter is applied
+				wg.Add(1)
+				go func(child uint64) {
+					defer wg.Done()
+					findSubPath("", pm, names, child, ch, pathParts[1:])
+				}(c)
+			}
 		}
 		wg.Wait()
 		fmt.Println("All go routines are over. closing the channel")
@@ -151,8 +165,8 @@ func findSubPath(
 	parChildrenMap map[uint64][]uint64,
 	inodeNames map[uint64]INode,
 	curInodeId uint64,
-	ch chan string) {
-
+	ch chan string,
+	pathParts []string) {
 	children, ok1 := parChildrenMap[curInodeId]
 	inode, _ := inodeNames[curInodeId]
 	p := constructedPath + "/" + string(inode.Name)
@@ -161,6 +175,12 @@ func findSubPath(
 		return
 	}
 	for _, child := range children {
-		findSubPath(p, parChildrenMap, inodeNames, child, ch)
+		if len(pathParts) == 0 {
+			// all filter are over or there are no filters specified
+			findSubPath(p, parChildrenMap, inodeNames, child, ch, pathParts)
+		} else if string(inodeNames[child].Name) == pathParts[0] {
+			// there is some sort of path filtering present
+			findSubPath(p, parChildrenMap, inodeNames, child, ch, pathParts[1:])
+		}
 	}
 }
